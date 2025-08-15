@@ -1,0 +1,19 @@
+services:
+  land-agent-api:
+    build: .
+    container_name: land-agent-poc
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/legal_texts:/app/data/legal_texts:ro
+      - ./.cache:/app/.cache
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
