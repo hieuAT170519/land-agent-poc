@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build Docker image
+      run: docker build -t land-agent-poc .
+      
+    - name: Run Docker container
+      run: |
+        docker run -d \
+          --name land-agent-test \
+          -p 8000:8000 \
+          -v $(pwd)/data/legal_texts:/app/data/legal_texts:ro \
+          land-agent-poc
+          
+    - name: Wait for service to be ready
+      run: |
+        echo "Waiting for service to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8000/health > /dev/null; then
+            echo "Service is ready"
+            break
+          fi
+          echo "Attempt $i/30: Service not ready yet..."
+          sleep 2
+        done
+        
+    - name: Test health endpoint
+      run: |
+        response=$(curl -s http://localhost:8000/health)
+        echo "Health response: $response"
+        if echo "$response" | grep -q '"status":"ok"'; then
+          echo "✓ Health check passed"
+        else
+          echo "✗ Health check failed"
+          exit 1
+        fi
+        
+    - name: Test RAG index build
+      run: |
+        echo "Testing RAG index build..."
+        response=$(curl -s -X POST http://localhost:8000/rag/index)
+        echo "RAG index response: $response"
+        # Don't fail if no texts are available
+        if echo "$response" | grep -q -E '"status":"(success|warning)"'; then
+          echo "✓ RAG index build completed"
+        else
+          echo "✗ RAG index build failed"
+          exit 1
+        fi
+        
+    - name: Show container logs
+      if: always()
+      run: docker logs land-agent-test
+      
+    - name: Stop container
+      if: always()
+      run: docker stop land-agent-test && docker rm land-agent-test
